@@ -1,0 +1,14 @@
+{
+    "name": "ostrojen/you_can_tell_me_bot",
+    "require": {
+        "ext-tdlib": "*",
+        "ext-json": "*",
+        "symfony/console": "^5.4",
+        "phptdlib/phptdlib-stubs": "@dev"
+    },
+    "autoload": {
+        "psr-4": {
+            "YouCanTellMeBot\\": "src/"
+        }
+    }
+}
