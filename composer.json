@@ -3,7 +3,9 @@
     "require": {
         "ext-tdlib": "*",
         "ext-json": "*",
-        "symfony/console": "^5.4",
+        "symfony/console": "^5.4"
+    },
+    "require-dev": {
         "phptdlib/phptdlib-stubs": "@dev"
     },
     "autoload": {

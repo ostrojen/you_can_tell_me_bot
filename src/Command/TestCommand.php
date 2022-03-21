@@ -2,6 +2,7 @@
 
 namespace YouCanTellMeBot\Command;
 
+use Exception;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -12,67 +13,107 @@ use TDLib\JsonClient;
 
 class TestCommand extends Command
 {
+    private const TIMEOUT = 10;
+
     protected static $defaultName = 'you-can-tell-me-bot:test';
 
+    /**
+     * @throws Exception
+     */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        // TODO: move to env
-        $api_id = '';
-        $api_hash = '';
-        $phone_number = '';
+        $api_id = (int)getenv('API_ID');
+        $api_hash = getenv('API_HASH');
+        $phone_number = getenv('PHONE_NUMBER');
 
-        try {
-            LogConfiguration::setLogVerbosityLevel(LogConfiguration::LVL_ERROR);
+        LogConfiguration::setLogVerbosityLevel(LogConfiguration::LVL_ERROR);
 
-            $client = new JsonClient();
+        $client = new JsonClient();
 
-            $parameters = new TDLibParameters();
-            $parameters
-                ->setParameter(TDLibParameters::USE_TEST_DC, true)
-                ->setParameter(TDLibParameters::DATABASE_DIRECTORY, '/var/tmp/tdlib')
-                ->setParameter(TDLibParameters::FILES_DIRECTORY, '/var/tmp/tdlib')
-                ->setParameter(TDLibParameters::USE_FILE_DATABASE, false)
-                ->setParameter(TDLibParameters::USE_CHAT_INFO_DATABASE, false)
-                ->setParameter(TDLibParameters::USE_MESSAGE_DATABASE, false)
-                ->setParameter(TDLibParameters::USE_SECRET_CHATS, false)
-                ->setParameter(TDLibParameters::API_ID, $api_id)
-                ->setParameter(TDLibParameters::API_HASH, $api_hash)
-                ->setParameter(TDLibParameters::SYSTEM_LANGUAGE_CODE, 'en')
-                ->setParameter(TDLibParameters::DEVICE_MODEL, php_uname('s'))
-                ->setParameter(TDLibParameters::SYSTEM_VERSION, php_uname('v'))
-                ->setParameter(TDLibParameters::APPLICATION_VERSION, '0.0.10')
-                ->setParameter(TDLibParameters::ENABLE_STORAGE_OPTIMIZER, true)
-                ->setParameter(TDLibParameters::IGNORE_FILE_NAMES, false);
+        $parameters = new TDLibParameters();
+        $parameters
+            ->setParameter(TDLibParameters::USE_TEST_DC, true)
+            ->setParameter(TDLibParameters::DATABASE_DIRECTORY, '/var/tmp/tdlib')
+            ->setParameter(TDLibParameters::FILES_DIRECTORY, '/var/tmp/tdlib')
+            ->setParameter(TDLibParameters::USE_FILE_DATABASE, false)
+            ->setParameter(TDLibParameters::USE_CHAT_INFO_DATABASE, false)
+            ->setParameter(TDLibParameters::USE_MESSAGE_DATABASE, false)
+            ->setParameter(TDLibParameters::USE_SECRET_CHATS, false)
+            ->setParameter(TDLibParameters::API_ID, $api_id)
+            ->setParameter(TDLibParameters::API_HASH, $api_hash)
+            ->setParameter(TDLibParameters::SYSTEM_LANGUAGE_CODE, 'en')
+            ->setParameter(TDLibParameters::DEVICE_MODEL, php_uname('s'))
+            ->setParameter(TDLibParameters::SYSTEM_VERSION, php_uname('v'))
+            ->setParameter(TDLibParameters::APPLICATION_VERSION, '0.0.10')
+            ->setParameter(TDLibParameters::ENABLE_STORAGE_OPTIMIZER, true)
+            ->setParameter(TDLibParameters::IGNORE_FILE_NAMES, false);
 
-            $client->setTdlibParameters($parameters);
+        $client->setTdlibParameters($parameters);
 
-            $client->setDatabaseEncryptionKey();
+        $client->setDatabaseEncryptionKey();
 
-            $authorizationState = $client->getAuthorizationState();
+        $authorizationState = json_decode($client->getAuthorizationState(), true, 512, JSON_THROW_ON_ERROR);
 
-            if (json_decode($authorizationState, true)['@type'] === 'authorizationStateWaitPhoneNumber') {
+        if ($authorizationState['@type'] === 'authorizationStateWaitPhoneNumber') {
 
-                // you must check the state and follow workflow. Lines below is just for an example.
-                var_dump($client->setAuthenticationPhoneNumber($phone_number, 30)); // wait response 3 seconds. default - 1.
+            $client->setAuthenticationPhoneNumber($phone_number, self::TIMEOUT);
 
-                $code = $this->getHelper('question')->ask(
-                    $input,
-                    $output,
-                    new Question('Security code:')
-                );
+            $code = $this->getHelper('question')->ask(
+                $input,
+                $output,
+                new Question('Authentication code:')
+            );
 
-                var_dump($client->query(
-                    json_encode([
-                        '@type'      => 'checkAuthenticationCode',
-                        'code'       => $code,
-                    ]),
-                    10
-                ));
+            $client->query(
+                json_encode([
+                    '@type' => 'checkAuthenticationCode',
+                    'code'  => $code
+                ], JSON_THROW_ON_ERROR),
+                self::TIMEOUT
+            );
+
+            $client->query(
+                json_encode([
+                    '@type'      => 'registerUser',
+                    'first_name' => getenv('FIRST_NAME'),
+                    'last_name'  => getenv('LAST_NAME'),
+                ], JSON_THROW_ON_ERROR),
+                self::TIMEOUT
+            );
+        }
+
+        $chatIds = json_decode(
+            $client->query(
+                json_encode(['@type' => 'getChats', 'limit' => 9999], JSON_THROW_ON_ERROR),
+                self::TIMEOUT
+            ),
+            true,
+            512,
+            JSON_THROW_ON_ERROR
+        )['chat_ids'];
+
+        foreach ($chatIds as $chatId) {
+
+            $chatHistory = json_decode(
+                $client->query(
+                    json_encode(
+                        [
+                            '@type'   => 'getChatHistory',
+                            'chat_id' => $chatId,
+                            'limit'   => 9999
+                        ],
+                        JSON_THROW_ON_ERROR
+                    ),
+                    self::TIMEOUT
+                ),
+                true,
+                512,
+                JSON_THROW_ON_ERROR
+            );
+
+            foreach ($chatHistory['messages'] as $message) {
+                var_dump($message);
             }
-            var_dump($client->query(json_encode(['@type' => 'getChats'])));
-
-        } catch (\Exception $exception) {
-            echo sprintf('something goes wrong: %s', $exception->getMessage());
         }
 
         // this method must return an integer number with the "exit status code"
